@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.35.x'
+          flutter-version: '3.35.7'
           channel: 'stable'
       - name: Install dependencies
         run: flutter pub get
@@ -31,3 +31,18 @@ jobs:
             build/**/goldens/**
             build/**/failures/**
             build/alchemist/**
+      - name: Comment on PR with golden failure
+        if: ${{ failure() && github.event_name == 'pull_request' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (pr) {
+              const body = `❌ Golden tests failed for #${pr.number} on ${context.sha.substring(0,7)}.\n\nSee run and artifacts: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n\nArtifacts name: golden-diffs`;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body,
+              });
+            }
