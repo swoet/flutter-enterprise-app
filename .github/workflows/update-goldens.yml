@@ -1,0 +1,103 @@
+name: Update goldens on command
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-goldens:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/update-goldens'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get PR info
+        if: github.event_name == 'issue_comment'
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            if (!issue.pull_request) {
+              core.setFailed('Comment is not on a pull request.');
+              return;
+            }
+            const {data: pr} = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: issue.number,
+            });
+            core.setOutput('head_ref', pr.head.ref);
+            core.setOutput('head_repo', pr.head.repo.full_name);
+            const actor = context.actor;
+            try {
+              const {data: perm} = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username: actor,
+              });
+              core.setOutput('actor_perm', perm.permission);
+            } catch (e) {
+              core.setOutput('actor_perm', 'none');
+            }
+      - name: Check permissions
+        if: github.event_name == 'issue_comment'
+        run: |
+          echo "Actor permission: ${{ steps.pr.outputs.actor_perm }}"
+          case "${{ steps.pr.outputs.actor_perm }}" in
+            admin|write|maintain) exit 0 ;;
+            *) echo "Insufficient permissions"; exit 1 ;;
+          esac
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || format('refs/heads/{0}', steps.pr.outputs.head_ref) }}
+          repository: ${{ github.event_name == 'workflow_dispatch' && github.repository || steps.pr.outputs.head_repo }}
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.7'
+          channel: 'stable'
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Generate localizations
+        run: flutter gen-l10n
+      - name: Update goldens
+        run: flutter test --update-goldens test/golden
+      - name: Commit changes
+        id: commit
+        shell: bash
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "test(goldens): update golden baselines [skip ci]"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+      - name: Push changes
+        if: steps.commit.outputs.changed == 'true'
+        run: git push
+      - name: Comment result
+        if: github.event_name == 'issue_comment'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const number = context.payload.issue.number;
+            const changed = "${{ steps.commit.outputs.changed }}";
+            const body = changed === 'true'
+              ? '✅ Goldens updated and pushed.'
+              : 'ℹ️ No golden changes detected.';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: number,
+              body,
+            });
