@@ -1,0 +1,33 @@
+name: Golden tests
+
+on:
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  golden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.x'
+          channel: 'stable'
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Generate localizations
+        run: flutter gen-l10n
+      - name: Run golden tests
+        run: flutter test -r expanded -j 1 test/golden
+      - name: Upload golden diffs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-diffs
+          if-no-files-found: ignore
+          path: |
+            test/golden/goldens/**
+            build/**/goldens/**
+            build/**/failures/**
+            build/alchemist/**
