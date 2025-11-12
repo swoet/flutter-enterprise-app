@@ -1,0 +1,25 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # Style & reliability
+    prefer_const_constructors: true
+    prefer_const_literals_to_create_immutables: true
+    prefer_final_locals: true
+    unnecessary_late: true
+    avoid_print: true
+    avoid_redundant_argument_values: true
+    use_key_in_widget_constructors: true
+    cancel_subscriptions: true
+    close_sinks: true
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  exclude:
+    - build/**
+  errors:
+    invalid_use_of_visible_for_testing_member: warning
+    invalid_use_of_protected_member: warning
